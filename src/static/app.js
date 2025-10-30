@@ -4,6 +4,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
+  // Helper to escape text inserted into HTML
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
@@ -20,14 +30,66 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
+
+        // Build participants markup with delete icon
+        const participantsHtml =
+          details.participants && details.participants.length
+            ? `<ul class="participants-list">${details.participants
+                .map((p) =>
+                  `<li data-email="${escapeHtml(p)}" data-activity="${escapeHtml(name)}">
+                    <span class="participant-email">${escapeHtml(p)}</span>
+                    <span class="delete-participant" title="Remove participant" tabindex="0">&#128465;</span>
+                  </li>`
+                )
+                .join("")}</ul>`
+            : `<p class="participants-empty">No participants yet. Be the first to sign up!</p>`;
+
         activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
+          <h4>${escapeHtml(name)}</h4>
+          <p>${escapeHtml(details.description)}</p>
+          <p><strong>Schedule:</strong> ${escapeHtml(details.schedule)}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          <div class="activity-card-participants">
+            <h5>Participants</h5>
+            ${participantsHtml}
+          </div>
         `;
 
+
         activitiesList.appendChild(activityCard);
+
+        // Add delete event listeners after rendering participants
+        const ul = activityCard.querySelector("ul.participants-list");
+        if (ul) {
+          ul.querySelectorAll(".delete-participant").forEach((icon) => {
+            icon.addEventListener("click", async (e) => {
+              const li = icon.closest("li");
+              const email = li.getAttribute("data-email");
+              const activity = li.getAttribute("data-activity");
+              if (confirm(`Remove ${email} from ${activity}?`)) {
+                try {
+                  const response = await fetch(`/activities/${encodeURIComponent(activity)}/unregister?email=${encodeURIComponent(email)}`, {
+                    method: "DELETE",
+                  });
+                  const result = await response.json();
+                  if (response.ok) {
+                    fetchActivities();
+                  } else {
+                    alert(result.detail || "Failed to remove participant.");
+                  }
+                } catch (err) {
+                  alert("Failed to remove participant.");
+                }
+              }
+            });
+            // Keyboard accessibility
+            icon.addEventListener("keydown", (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                icon.click();
+              }
+            });
+          });
+        }
 
         // Add option to select dropdown
         const option = document.createElement("option");
@@ -62,6 +124,8 @@ document.addEventListener("DOMContentLoaded", () => {
         messageDiv.textContent = result.message;
         messageDiv.className = "success";
         signupForm.reset();
+        // Refresh activities list so the new participant appears
+        fetchActivities();
       } else {
         messageDiv.textContent = result.detail || "An error occurred";
         messageDiv.className = "error";
